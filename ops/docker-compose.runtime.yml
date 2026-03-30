@@ -1,0 +1,107 @@
+services:
+  nginx:
+    image: nginx:1.25-alpine
+    restart: unless-stopped
+    depends_on: [ app_blue, app_green, frontend_blue, frontend_green ]
+    volumes:
+      - ./nginx/runtime.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./runtime/backend-upstream.conf:/etc/nginx/includes/backend-upstream.inc
+      - ./certbot/www:/var/www/certbot:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+    networks: [ app ]
+    ports: [ "80:80", "443:443" ]
+
+  app_blue:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      network: host
+    image: sport-radar-backend:runtime
+    pull_policy: never
+    restart: unless-stopped
+    env_file: [ .env ]
+    networks: [ app ]
+    ports: [ "127.0.0.1:8082:9000" ]
+
+  app_green:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      network: host
+    image: sport-radar-backend:runtime
+    pull_policy: never
+    restart: unless-stopped
+    env_file: [ .env ]
+    networks: [ app ]
+    ports: [ "127.0.0.1:8083:9000" ]
+
+  frontend_blue:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      network: host
+      args:
+        INTERNAL_API_BASE: ${INTERNAL_API_BASE:-http://nginx}
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-/api}
+    image: sport-radar-frontend:runtime
+    pull_policy: never
+    restart: unless-stopped
+    env_file: [ .env ]
+    environment:
+      NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-/api}
+      INTERNAL_API_BASE: ${INTERNAL_API_BASE:-http://nginx}
+    networks: [ app ]
+    ports: [ "127.0.0.1:3002:3000" ]
+
+  frontend_green:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      network: host
+      args:
+        INTERNAL_API_BASE: ${INTERNAL_API_BASE:-http://nginx}
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-/api}
+    image: sport-radar-frontend:runtime
+    pull_policy: never
+    restart: unless-stopped
+    env_file: [ .env ]
+    environment:
+      NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-/api}
+      INTERNAL_API_BASE: ${INTERNAL_API_BASE:-http://nginx}
+    networks: [ app ]
+    ports: [ "127.0.0.1:3003:3000" ]
+
+  scheduler:
+    image: sport-radar-backend:runtime
+    pull_policy: never
+    restart: unless-stopped
+    command: ["php", "artisan", "schedule:work"]
+    env_file: [ .env ]
+    networks: [ app ]
+
+  horizon:
+    image: sport-radar-backend:runtime
+    pull_policy: never
+    restart: unless-stopped
+    command: ["php", "artisan", "sport-radar:process-reindex", "--loop", "--sleep=3"]
+    env_file: [ .env ]
+    networks: [ app ]
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file: [ .env ]
+    volumes: [ "pg_data:/var/lib/postgresql/data" ]
+    networks: [ app ]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks: [ app ]
+
+networks:
+  app:
+    driver: bridge
+
+volumes:
+  pg_data:

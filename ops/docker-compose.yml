@@ -1,0 +1,114 @@
+services:
+  nginx:
+    image: nginx:1.25-alpine
+    ports:
+      - "${APP_PORT:-8080}:80"
+    depends_on:
+      - backend
+      - frontend
+    volumes:
+      - ./nginx/dev.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - app
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      network: host
+    working_dir: /var/www/backend
+    command: sh -lc "test -f .env || cp .env.example .env; php artisan serve --host=0.0.0.0 --port=9000"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${DB_DATABASE:-sports_news}
+      DB_USERNAME: ${DB_USERNAME:-sports}
+      DB_PASSWORD: ${DB_PASSWORD:-sports}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-CHANGE_ME_STRONG_INTERNAL_TOKEN}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-CHANGE_ME_STRONG_ADMIN_PASSWORD}
+      ADMIN_OTP_CODE: ${ADMIN_OTP_CODE:-CHANGE_ME_OTP_SECRET}
+    ports:
+      - "${BACKEND_PORT:-9000}:9000"
+    volumes:
+      - ../backend:/var/www/backend
+    networks:
+      - app
+
+  frontend:
+    image: node:20-alpine
+    working_dir: /var/www/frontend
+    command: sh -lc "npm install && npm run dev"
+    environment:
+      NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-/api}
+      INTERNAL_API_BASE: ${INTERNAL_API_BASE:-http://backend:9000}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    volumes:
+      - ../frontend:/var/www/frontend
+    networks:
+      - app
+
+  scheduler:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      network: host
+    working_dir: /var/www/backend
+    command: sh -lc "test -f .env || cp .env.example .env; php artisan schedule:work"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${DB_DATABASE:-sports_news}
+      DB_USERNAME: ${DB_USERNAME:-sports}
+      DB_PASSWORD: ${DB_PASSWORD:-sports}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-CHANGE_ME_STRONG_INTERNAL_TOKEN}
+    volumes:
+      - ../backend:/var/www/backend
+    networks:
+      - app
+
+  worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      network: host
+    working_dir: /var/www/backend
+    command: sh -lc "test -f .env || cp .env.example .env; php artisan sport-radar:process-reindex --loop --sleep=3"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: ${DB_PORT:-5432}
+      DB_DATABASE: ${DB_DATABASE:-sports_news}
+      DB_USERNAME: ${DB_USERNAME:-sports}
+      DB_PASSWORD: ${DB_PASSWORD:-sports}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-CHANGE_ME_STRONG_INTERNAL_TOKEN}
+    volumes:
+      - ../backend:/var/www/backend
+    networks:
+      - app
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-sports_news}
+      POSTGRES_USER: ${DB_USERNAME:-sports}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-sports}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - app
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - app
+
+networks:
+  app:
+    driver: bridge
+
+volumes:
+  pg_data:
